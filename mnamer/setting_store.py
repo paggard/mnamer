@@ -355,6 +355,10 @@ class SettingStore:
         default_factory=lambda: {"&": "and", "@": "at", ";": ","},
         metadata=SettingSpec(group=SettingType.CONFIGURATION).as_dict(),
     )
+    replace_after_dir: bool = dataclasses.field(
+        default=True,
+        metadata=SettingSpec(group=SettingType.CONFIGURATION).as_dict(),
+    )
 
     @classmethod
     def specifications(cls) -> list[SettingSpec]:
@@ -417,7 +421,7 @@ class SettingStore:
 
     def bulk_apply(self, d: dict[str, Any]):
         for k, v in d.items():
-            if v:
+            if v is not None:
                 setattr(self, k, v)
 
     def load(self) -> None:

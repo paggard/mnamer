@@ -103,7 +103,9 @@ class Target:
             dir_head = Path(dir_head_)
         else:
             dir_head = self.source.parent
+        self.metadata._replace_after = self._settings.replace_after  # type: ignore[attr-defined]
         file_path = format(self.metadata, self._settings.formatting_for(self.metadata))
+        del self.metadata._replace_after  # type: ignore[attr-defined]
         dir_tail, filename = path.split(Path(file_path))
         filename = filename_replace(filename, self._settings.replace_after)
         if self._settings.scene:
@@ -111,6 +113,19 @@ class Target:
         if self._settings.lower:
             filename = filename.lower()
         filename = str_sanitize(filename)
+        if dir_tail:
+            dir_parts = Path(dir_tail).parts
+            processed_parts: list[str] = []
+            for part in dir_parts:
+                if self._settings.replace_after_dir:
+                    part = filename_replace(part, self._settings.replace_after)
+                if self._settings.scene:
+                    part = str_scenify(part)
+                if self._settings.lower:
+                    part = part.lower()
+                part = str_sanitize(part)
+                processed_parts.append(part)
+            dir_tail = str(Path(*processed_parts))
         directory = Path(dir_head, dir_tail)
         return Path(directory, filename)
 

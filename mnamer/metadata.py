@@ -15,6 +15,7 @@ from mnamer.utils import (
     normalize_container,
     parse_date,
     str_fix_padding,
+    str_replace,
     str_replace_slashes,
     str_title_case,
     year_parse,
@@ -89,10 +90,25 @@ class Metadata:
         return d
 
     def _format_repl(self, mobj) -> str:
-        format_string, key = mobj.groups()
-        value = _MetaFormatter().vformat(format_string, "", self.as_dict())
+        format_string, key, sub_pattern, sub_repl = mobj.groups()
+        if sub_pattern is not None:
+            # Strip the .replace(...) transform from the token before rendering
+            clean_format = re.sub(
+                r"\.replace\('[^']*?','[^']*?'\)", "", format_string
+            )
+        else:
+            clean_format = format_string
+        value = _MetaFormatter().vformat(clean_format, "", self.as_dict())
         if key in {"name", "series", "synopsis", "title"}:
             value = str_title_case(value)
+        if sub_pattern is not None and value:
+            # Apply replace_after substitutions to the value before the inline
+            # regex transform, so word-level replacements (e.g. & -> and) are
+            # visible to the pattern. The dict is injected by Target.destination.
+            replace_after: dict[str, str] = getattr(self, "_replace_after", {})
+            if replace_after:
+                value = str_replace(value, replace_after)
+            value = re.sub(sub_pattern, sub_repl or "", value)
         return value
 
     def update(self, metadata: Metadata):
@@ -118,7 +134,7 @@ class MetadataMovie(Metadata):
 
     def __format__(self, format_spec: str | None):
         default = "{name} ({year})"
-        re_pattern = r"({(\w+)(?:\[[\w:]+\])?(?:\:\d{1,2})?})"
+        re_pattern = r"({(\w+)(?:\.replace\('([^']*?)','([^']*?)'\))?(?:\[[\w:]+\])?(?:\:\d{1,2})?})"
         s = re.sub(re_pattern, self._format_repl, format_spec or default)
         s = str_fix_padding(s)
         return s
@@ -159,7 +175,7 @@ class MetadataEpisode(Metadata):
 
     def __format__(self, format_spec: str | None):
         default = "{series} - {season:02}x{episode:02} - {title}"
-        re_pattern = r"({(\w+)(?:\[[\w:]+\])?(?:\:\d{1,2})?})"
+        re_pattern = r"({(\w+)(?:\.replace\('([^']*?)','([^']*?)'\))?(?:\[[\w:]+\])?(?:\:\d{1,2})?})"
         s = re.sub(re_pattern, self._format_repl, format_spec or default)
         s = str_fix_padding(s)
         return s
