@@ -3,6 +3,7 @@
 import datetime as dt
 import json
 import re
+import subprocess
 from collections.abc import Callable, Iterator
 from os import walk
 from os.path import exists, expanduser, expandvars, getsize, splitdrive, splitext
@@ -14,6 +15,105 @@ import requests_cache
 from requests.adapters import HTTPAdapter
 
 from mnamer.const import CACHE_PATH, CURRENT_YEAR, SUBTITLE_CONTAINERS
+
+
+# ---------------------------------------------------------------------------
+# ffprobe media inspection
+# ---------------------------------------------------------------------------
+
+_FFPROBE_CODEC_MAP: dict[str, str] = {
+    "h264": "H264",
+    "hevc": "H265",
+    "av1": "AV1",
+    "vp9": "VP9",
+    "vp8": "VP8",
+    "mpeg4": "MPEG4",
+    "mpeg2video": "MPEG2",
+    "xvid": "XviD",
+    "divx": "DivX",
+    "theora": "Theora",
+    "wmv3": "WMV",
+    "vc1": "VC1",
+    "mjpeg": "MJPEG",
+    "prores": "ProRes",
+    "dnxhd": "DNxHD",
+}
+
+
+def _ffprobe_path(ffmpeg_path: str) -> str:
+    """Derives the ffprobe binary path from the given ffmpeg binary path."""
+    p = Path(ffmpeg_path)
+    if p.parent == Path("."):
+        return "ffprobe"
+    return str(p.parent / "ffprobe")
+
+
+def probe_media_info(
+    file_path: Path, ffmpeg_path: str
+) -> tuple[str | None, str | None]:
+    """
+    Uses ffprobe to extract video resolution and codec from a media file.
+
+    Returns a ``(resolution, codec)`` tuple; either value may be ``None`` when
+    the information cannot be determined.  The ffprobe binary is derived from
+    *ffmpeg_path* (same directory, filename ``ffprobe``).
+    """
+    ffprobe = _ffprobe_path(ffmpeg_path)
+    try:
+        result = subprocess.run(
+            [
+                ffprobe,
+                "-v", "quiet",
+                "-print_format", "json",
+                "-show_streams",
+                "-select_streams", "v:0",
+                str(file_path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        return None, None
+
+    try:
+        data = json.loads(result.stdout)
+    except (json.JSONDecodeError, ValueError):
+        return None, None
+
+    streams = data.get("streams", [])
+    if not streams:
+        return None, None
+
+    stream = streams[0]
+    height: int | None = stream.get("height")
+    raw_codec: str | None = stream.get("codec_name")
+
+    resolution: str | None = None
+    if isinstance(height, int) and height > 0:
+        if height >= 2160:
+            resolution = "4K"
+        elif height >= 1440:
+            resolution = "1440p"
+        elif height >= 1080:
+            resolution = "1080p"
+        elif height >= 720:
+            resolution = "720p"
+        elif height >= 576:
+            resolution = "576p"
+        elif height >= 480:
+            resolution = "480p"
+        else:
+            resolution = f"{height}p"
+
+    codec: str | None = None
+    if raw_codec:
+        codec = _FFPROBE_CODEC_MAP.get(raw_codec.lower(), raw_codec.upper())
+
+    return resolution, codec
+
+
+# ---------------------------------------------------------------------------
 
 
 def clean_dict(target_dict: dict, whitelist=None) -> dict:

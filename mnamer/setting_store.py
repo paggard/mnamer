@@ -359,6 +359,15 @@ class SettingStore:
         default=True,
         metadata=SettingSpec(group=SettingType.CONFIGURATION).as_dict(),
     )
+    ffmpeg_path: str | None = dataclasses.field(
+        default=None,
+        metadata=SettingSpec(
+            dest="ffmpeg_path",
+            flags=["--ffmpeg_path", "--ffmpeg-path", "--ffmpegpath"],
+            group=SettingType.PARAMETER,
+            help="--ffmpeg-path=<PATH>: path to ffmpeg binary; enables codec/resolution tokens",
+        ).as_dict(),
+    )
 
     @classmethod
     def specifications(cls) -> list[SettingSpec]:

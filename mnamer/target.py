@@ -20,6 +20,7 @@ from mnamer.utils import (
     filter_blacklist,
     filter_containers,
     is_subtitle,
+    probe_media_info,
     str_replace,
     str_sanitize,
     str_scenify,
@@ -47,6 +48,7 @@ class Target:
         self._has_moved = False
         self._has_renamed = False
         self._parse(file_path)
+        self._probe()
         self._replace_before()
         self._override_metadata_ids()
         self._register_provider()
@@ -226,6 +228,18 @@ class Target:
             )
         self._provider = self._providers[provider_type]
 
+    def _probe(self) -> None:
+        """Probes the source file with ffprobe and populates resolution/codec."""
+        if not self._settings.ffmpeg_path:
+            return
+        resolution, codec = probe_media_info(
+            self.source, self._settings.ffmpeg_path
+        )
+        if resolution:
+            self.metadata.resolution = resolution
+        if codec:
+            self.metadata.codec = codec
+
     def _replace_before(self) -> None:
         if not self._settings.replace_before:
             return
@@ -256,8 +270,44 @@ class Target:
     def relocate(self) -> None:
         """Performs the action of renaming and/or moving a file."""
         destination_path = Path(self.destination).resolve()
-        destination_path.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            move(str(self.source), destination_path)
-        except OSError as e:  # pragma: no cover
-            raise MnamerException from e
+        destination_dir = destination_path.parent
+        source_parent = self.source.parent.resolve()
+
+        # When the format places the movie inside a subdirectory AND the source
+        # file is already in a sibling directory of that subdirectory (i.e. it
+        # lives in the same movie-library root but under a different folder
+        # name), rename the existing directory in-place instead of moving the
+        # file across the filesystem.  Requirements:
+        #   • target is a movie
+        #   • a movie_directory base is set
+        #   • the format produces a subdirectory (destination_dir != base dir)
+        #   • the source's parent and the desired destination directory share
+        #     the same grandparent (both are one level deep in the base dir)
+        #   • the source parent is already different from the destination dir
+        #   • the desired destination directory does not yet exist
+        if (
+            isinstance(self.metadata, MetadataMovie)
+            and self.directory is not None
+            and destination_dir != self.directory.resolve()
+            and source_parent != destination_dir
+            and source_parent.parent == destination_dir.parent
+            and not destination_dir.exists()
+        ):
+            try:
+                move(str(source_parent), destination_dir)
+            except OSError as e:  # pragma: no cover
+                raise MnamerException from e
+            # After the directory rename the file sits at a new path; rename it
+            # too if its name also needs to change.
+            relocated_source = destination_dir / self.source.name
+            if relocated_source != destination_path:
+                try:
+                    move(str(relocated_source), destination_path)
+                except OSError as e:  # pragma: no cover
+                    raise MnamerException from e
+        else:
+            destination_path.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                move(str(self.source), destination_path)
+            except OSError as e:  # pragma: no cover
+                raise MnamerException from e

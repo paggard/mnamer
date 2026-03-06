@@ -40,11 +40,13 @@ class _MetaFormatter(Formatter):
 class Metadata:
     """A dataclass which transforms and stores media metadata information."""
 
+    codec: str | None = None
     container: str | None = None
     group: str | None = None
     language: Language | None = None
     language_sub: Language | None = None
     quality: str | None = None
+    resolution: str | None = None
     synopsis: str | None = None
 
     @classmethod
@@ -138,9 +140,9 @@ class MetadataMovie(Metadata):
     def mediaid(self) -> str | None:
         """Returns a prefixed media ID indicating the source database."""
         if self.id_tmdb is not None:
-            return f"tmdb-{self.id_tmdb}"
+            return f"tmdbid-{self.id_tmdb}"
         elif self.id_imdb is not None:
-            return f"imdb-{self.id_imdb}"
+            return f"imdbid-{self.id_imdb}"
         return None
 
     def __format__(self, format_spec: str | None):
@@ -180,9 +182,9 @@ class MetadataEpisode(Metadata):
     def mediaid(self) -> str | None:
         """Returns a prefixed media ID indicating the source database."""
         if self.id_tvdb is not None:
-            return f"tvdb-{self.id_tvdb}"
+            return f"tvdbid-{self.id_tvdb}"
         elif self.id_tvmaze is not None:
-            return f"tvmaze-{self.id_tvmaze}"
+            return f"tvmazeid-{self.id_tvmaze}"
         return None
 
     def __post_init__(self):
