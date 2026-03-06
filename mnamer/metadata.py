@@ -87,6 +87,8 @@ class Metadata:
     def as_dict(self) -> dict[str, Any]:
         d = dataclasses.asdict(self)
         d["extension"] = self.extension
+        if hasattr(self, "mediaid"):
+            d["mediaid"] = self.mediaid
         return d
 
     def _format_repl(self, mobj) -> str:
@@ -132,6 +134,15 @@ class MetadataMovie(Metadata):
     id_imdb: str | None = None
     id_tmdb: str | None = None
 
+    @property
+    def mediaid(self) -> str | None:
+        """Returns a prefixed media ID indicating the source database."""
+        if self.id_tmdb is not None:
+            return f"tmdb-{self.id_tmdb}"
+        elif self.id_imdb is not None:
+            return f"imdb-{self.id_imdb}"
+        return None
+
     def __format__(self, format_spec: str | None):
         default = "{name} ({year})"
         re_pattern = r"({(\w+)(?:\.replace\('([^']*?)','([^']*?)'\))?(?:\[[\w:]+\])?(?:\:\d{1,2})?})"
@@ -164,6 +175,15 @@ class MetadataEpisode(Metadata):
     title: str | None = None
     id_tvdb: str | None = None
     id_tvmaze: str | None = None
+
+    @property
+    def mediaid(self) -> str | None:
+        """Returns a prefixed media ID indicating the source database."""
+        if self.id_tvdb is not None:
+            return f"tvdb-{self.id_tvdb}"
+        elif self.id_tvmaze is not None:
+            return f"tvmaze-{self.id_tvmaze}"
+        return None
 
     def __post_init__(self):
         if isinstance(self.season, str):

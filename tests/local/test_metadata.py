@@ -123,3 +123,60 @@ def test_metadata_movie__format_with_specifiers():
     expected = "P/Pineapple Express"
     actual = format(metadata, format_spec)
     assert actual == expected
+
+
+# mediaid tests ----------------------------------------------------------------
+
+
+def test_metadata_movie__mediaid_tmdb_takes_priority():
+    metadata = MetadataMovie(id_tmdb="12345", id_imdb="tt0012345")
+    assert metadata.mediaid == "tmdb-12345"
+
+
+def test_metadata_movie__mediaid_imdb_fallback():
+    metadata = MetadataMovie(id_imdb="tt0012345")
+    assert metadata.mediaid == "imdb-tt0012345"
+
+
+def test_metadata_movie__mediaid_none_when_no_ids():
+    metadata = MetadataMovie(name="Some Movie", year="2020")
+    assert metadata.mediaid is None
+
+
+def test_metadata_movie__mediaid_in_format():
+    metadata = MetadataMovie(name="Inception", year="2010", id_tmdb="27205")
+    actual = format(metadata, "{name} ({year}) [{mediaid}]")
+    assert actual == "Inception (2010) [tmdb-27205]"
+
+
+def test_metadata_movie__mediaid_in_as_dict():
+    metadata = MetadataMovie(id_tmdb="27205")
+    assert metadata.as_dict()["mediaid"] == "tmdb-27205"
+
+
+def test_metadata_episode__mediaid_tvdb_takes_priority():
+    metadata = MetadataEpisode(id_tvdb="153021", id_tvmaze="73")
+    assert metadata.mediaid == "tvdb-153021"
+
+
+def test_metadata_episode__mediaid_tvmaze_fallback():
+    metadata = MetadataEpisode(id_tvmaze="73")
+    assert metadata.mediaid == "tvmaze-73"
+
+
+def test_metadata_episode__mediaid_none_when_no_ids():
+    metadata = MetadataEpisode(series="Breaking Bad", season=1, episode=1)
+    assert metadata.mediaid is None
+
+
+def test_metadata_episode__mediaid_in_format():
+    metadata = MetadataEpisode(
+        series="The Walking Dead", season=1, episode=1, id_tvdb="153021"
+    )
+    actual = format(metadata, "{series} - S{season:02}E{episode:02} [{mediaid}]")
+    assert actual == "The Walking Dead - S01E01 [tvdb-153021]"
+
+
+def test_metadata_episode__mediaid_in_as_dict():
+    metadata = MetadataEpisode(id_tvdb="153021")
+    assert metadata.as_dict()["mediaid"] == "tvdb-153021"
