@@ -50,13 +50,17 @@ def _ffprobe_path(ffmpeg_path: str) -> str:
 
 def probe_media_info(
     file_path: Path, ffmpeg_path: str
-) -> tuple[str | None, str | None]:
+) -> tuple[str | None, str | None, str | None]:
     """
-    Uses ffprobe to extract video resolution and codec from a media file.
+    Uses ffprobe to extract video resolution, codec and audio language label
+    from a media file.
 
-    Returns a ``(resolution, codec)`` tuple; either value may be ``None`` when
-    the information cannot be determined.  The ffprobe binary is derived from
-    *ffmpeg_path* (same directory, filename ``ffprobe``).
+    Returns a ``(resolution, codec, audio_lang)`` tuple; any value may be
+    ``None`` when the information cannot be determined.  *audio_lang* is
+    ``'ENG'`` when the file contains only a single English audio stream, and
+    ``'MULTI'`` when there are multiple audio streams or the sole stream is not
+    English.  The ffprobe binary is derived from *ffmpeg_path* (same
+    directory, filename ``ffprobe``).
     """
     ffprobe = _ffprobe_path(ffmpeg_path)
     try:
@@ -66,7 +70,6 @@ def probe_media_info(
                 "-v", "quiet",
                 "-print_format", "json",
                 "-show_streams",
-                "-select_streams", "v:0",
                 str(file_path),
             ],
             capture_output=True,
@@ -74,43 +77,54 @@ def probe_media_info(
             timeout=15,
         )
     except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
-        return None, None
+        return None, None, None
 
     try:
         data = json.loads(result.stdout)
     except (json.JSONDecodeError, ValueError):
-        return None, None
+        return None, None, None
 
-    streams = data.get("streams", [])
-    if not streams:
-        return None, None
+    all_streams = data.get("streams", [])
+    if not all_streams:
+        return None, None, None
 
-    stream = streams[0]
-    height: int | None = stream.get("height")
-    raw_codec: str | None = stream.get("codec_name")
+    video_streams = [s for s in all_streams if s.get("codec_type") == "video"]
+    audio_streams = [s for s in all_streams if s.get("codec_type") == "audio"]
 
+    # --- video resolution & codec -------------------------------------------
     resolution: str | None = None
-    if isinstance(height, int) and height > 0:
-        if height >= 2160:
-            resolution = "4K"
-        elif height >= 1440:
-            resolution = "1440p"
-        elif height >= 1080:
-            resolution = "1080p"
-        elif height >= 720:
-            resolution = "720p"
-        elif height >= 576:
-            resolution = "576p"
-        elif height >= 480:
-            resolution = "480p"
-        else:
-            resolution = f"{height}p"
-
     codec: str | None = None
-    if raw_codec:
-        codec = _FFPROBE_CODEC_MAP.get(raw_codec.lower(), raw_codec.upper())
+    if video_streams:
+        stream = video_streams[0]
+        height: int | None = stream.get("height")
+        width: int | None = stream.get("width")
+        raw_codec: str | None = stream.get("codec_name")
 
-    return resolution, codec
+        if isinstance(width, int) and width > 0 and isinstance(height, int) and height > 0:
+            if width >= 3840:
+                resolution = "4K"
+            elif width >= 2560:
+                resolution = "1440p"
+            elif width >= 1920:
+                resolution = "1080p"
+            elif height >= 720:
+                resolution = "720p"
+            elif height >= 576:
+                resolution = "576p"
+            elif height >= 480:
+                resolution = "480p"
+            else:
+                resolution = f"{height}p"
+
+        if raw_codec:
+            codec = _FFPROBE_CODEC_MAP.get(raw_codec.lower(), raw_codec.upper())
+
+    # --- audio language label ------------------------------------------------
+    audio_lang: str | None = None
+    if len(audio_streams) > 1:
+        audio_lang = "MULTI."
+
+    return resolution, codec, audio_lang
 
 
 # ---------------------------------------------------------------------------

@@ -181,14 +181,12 @@ class Target:
             )
             or None
         )
-        self.metadata.language = path_data.get("language")
+        try:
+            self.metadata.language = path_data.get("language")
+        except MnamerException:
+            pass
         self.metadata.group = path_data.get("release_group")
         self.metadata.container = file_path.suffix or None
-        if not self.metadata.language:
-            try:
-                self.metadata.language = path_data.get("language")
-            except MnamerException:
-                pass
         try:
             self.metadata.language_sub = path_data.get("subtitle_language")
         except MnamerException:
@@ -229,16 +227,18 @@ class Target:
         self._provider = self._providers[provider_type]
 
     def _probe(self) -> None:
-        """Probes the source file with ffprobe and populates resolution/codec."""
+        """Probes the source file with ffprobe and populates resolution/codec/audio_lang."""
         if not self._settings.ffmpeg_path:
             return
-        resolution, codec = probe_media_info(
+        resolution, codec, audio_lang = probe_media_info(
             self.source, self._settings.ffmpeg_path
         )
         if resolution:
             self.metadata.resolution = resolution
         if codec:
             self.metadata.codec = codec
+        if audio_lang:
+            self.metadata.audio_lang = audio_lang
 
     def _replace_before(self) -> None:
         if not self._settings.replace_before:

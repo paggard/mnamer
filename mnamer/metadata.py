@@ -40,6 +40,7 @@ class _MetaFormatter(Formatter):
 class Metadata:
     """A dataclass which transforms and stores media metadata information."""
 
+    audio_lang: str | None = None
     codec: str | None = None
     container: str | None = None
     group: str | None = None
