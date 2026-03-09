@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import re
 from os import path
 from pathlib import Path
 from shutil import move
@@ -16,6 +17,7 @@ from mnamer.setting_store import SettingStore
 from mnamer.types import MediaType, ProviderType
 from mnamer.utils import (
     crawl_in,
+    crawl_in_dirs,
     filename_replace,
     filter_blacklist,
     filter_containers,
@@ -311,3 +313,62 @@ class Target:
                 move(str(self.source), destination_path)
             except OSError as e:  # pragma: no cover
                 raise MnamerException from e
+
+
+class DirectoryTarget(Target):
+    """Manages metadata state for a directory and facilitates its rename."""
+
+    @classmethod
+    def populate_dirs(cls: type[Target], settings: SettingStore) -> list[Target]:
+        """Creates a list of DirectoryTarget objects for dirs found in paths."""
+        dir_paths = crawl_in_dirs(settings.targets)
+        dir_paths = filter_blacklist(dir_paths, settings.ignore)
+        if settings.dir_ignore:
+            dir_paths = [
+                p for p in dir_paths
+                if not any(
+                    re.search(pattern, p.name, re.IGNORECASE)
+                    for pattern in settings.dir_ignore
+                    if pattern
+                )
+            ]
+        targets: list[Target] = [cls(dir_path, settings) for dir_path in dir_paths]
+        targets = list(dict.fromkeys(targets))  # unique values
+        targets = list(filter(cls._matches_media, targets))
+        return targets
+
+    def __init__(self, dir_path: Path, settings: SettingStore | None = None):
+        self.source = dir_path
+        self._settings = settings or SettingStore()
+        self._has_moved = False
+        self._has_renamed = False
+        # Parse using directory name only so guessit doesn't get confused by
+        # the full absolute path components.
+        self._parse(Path(dir_path.name))
+        # No _probe() — ffprobe is meaningless for directories.
+        self._replace_before()
+        self._override_metadata_ids()
+        self._register_provider()
+
+    @property
+    def destination(self) -> Path:
+        """The renamed directory Path based on dir format settings."""
+        self.metadata._replace_after = self._settings.replace_after  # type: ignore[attr-defined]
+        fmt = self._settings.dir_formatting_for(self.metadata)
+        dir_name = format(self.metadata, fmt)
+        del self.metadata._replace_after  # type: ignore[attr-defined]
+        dir_name = filename_replace(dir_name, self._settings.replace_after)
+        if self._settings.scene:
+            dir_name = str_scenify(dir_name)
+        if self._settings.lower:
+            dir_name = dir_name.lower()
+        dir_name = str_sanitize(dir_name)
+        return self.source.parent / dir_name
+
+    def rename_dir(self) -> None:
+        """Renames the source directory to the computed destination name."""
+        dest = Path(self.destination).resolve()
+        try:
+            move(str(self.source.resolve()), dest)
+        except OSError as e:  # pragma: no cover
+            raise MnamerException from e

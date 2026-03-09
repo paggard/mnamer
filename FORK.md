@@ -145,6 +145,81 @@ No configuration is required; the behaviour is transparent to the user.
 
 ---
 
+## Directory rename mode (`--dir-mode`)
+
+Instead of renaming individual media files, mnamer can operate on directories — identifying a folder as the container for a movie or TV show and renaming it according to a dedicated format string.
+
+**Activation:**
+
+```
+mnamer --dir-mode [options] <path>...
+```
+
+When `--dir-mode` is set, mnamer scans each given path for **immediate child directories** (non-recursive) and treats each directory name as the media title to look up.
+
+### New settings
+
+| Setting | Flag | Default | Description |
+|---------|------|---------|-------------|
+| `dir_mode` | `--dir-mode` | `false` | Enable directory rename mode |
+| `movie_dir_format` | `--movie-dir-format` | `{name} ({year})` | Format string for movie directories |
+| `episode_dir_format` | `--episode-dir-format` | `{series}` | Format string for episode/series directories |
+| `dir_ignore` | `--dir-ignore` | `[]` | Skip directories whose names match these regex patterns |
+
+### How it works
+
+1. `crawl_in_dirs()` returns all immediate subdirectories of the target paths.
+2. The global `--ignore` patterns are applied (against the full path).
+3. `--dir-ignore` patterns are applied against the **directory name only**, so a parent folder named "Collections" cannot accidentally suppress a legitimate child.
+4. Each surviving directory is parsed with `guessit` (on the directory name alone) to extract media metadata.
+5. The configured API provider is queried for a match.
+6. If a match is found, the directory is renamed in-place according to `movie_dir_format` or `episode_dir_format`; if not, it is skipped.
+7. All standard flags apply: `--batch`, `--test`, `--no-guess`, `--no-overwrite`, `--verbose`, `--scene`, `--lower`.
+
+### `--test` mode
+
+Like file renaming, `--dir-mode` fully supports `--test`: the resolved destination path is printed and counted as a success without touching the filesystem.
+
+### `--dir-ignore`
+
+Accepts one or more regular expressions (same syntax as `--ignore`) matched case-insensitively against the directory **name**:
+
+```
+mnamer --dir-mode --dir-ignore "Collection" ".*Pack.*" "^REMUX" /media/Movies/
+```
+
+Can also be set persistently in `.mnamer-v2.json`:
+
+```json
+{
+    "dir_ignore": ["Collection", ".*Pack.*"]
+}
+```
+
+### Example
+
+```
+/media/Movies/
+  inception.2010.bluray/
+  The.Dark.Knight.2008/
+  Marvel Collection/        ← skipped via --dir-ignore "Collection"
+  RARBG/                    ← skipped via --ignore (existing default)
+```
+
+```
+mnamer --dir-mode --batch --dir-ignore "Collection" /media/Movies/
+
+Processing Movie Directory "inception.2010.bluray"
+  renaming to /media/Movies/Inception (2010)  ✓
+
+Processing Movie Directory "The.Dark.Knight.2008"
+  renaming to /media/Movies/The Dark Knight (2008)  ✓
+
+2 out of 2 files processed successfully
+```
+
+---
+
 ## Bug fixes
 
 - **`bulk_apply` falsiness bug** — settings whose value is `False` or `0` were previously ignored when loading from a config file or CLI because `bulk_apply` used `if v` to guard `setattr`. Changed to `if v is not None` so boolean and zero-value settings are applied correctly.

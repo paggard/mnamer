@@ -161,6 +161,19 @@ def crawl_in(file_paths: list[Path], recurse: bool = False) -> list[Path]:
     return sorted(found_files)
 
 
+def crawl_in_dirs(dir_paths: list[Path]) -> list[Path]:
+    """Returns immediate child directories within each given path."""
+    found_dirs = set()
+    for dir_path in dir_paths:
+        if not dir_path.exists():
+            continue
+        if dir_path.is_dir():
+            for child in dir_path.iterdir():
+                if child.is_dir():
+                    found_dirs.add(child.absolute())
+    return sorted(found_dirs)
+
+
 def crawl_out(filename: str | Path | PurePath) -> Path | None:
     """Looks for a file in the home directory and each directory up from cwd."""
     working_dir = Path.cwd()
