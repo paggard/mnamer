@@ -52,6 +52,7 @@ class Target:
         self._parse(file_path)
         self._probe()
         self._replace_before()
+        self._parse_ids_from_filename()
         self._override_metadata_ids()
         self._register_provider()
 
@@ -161,6 +162,14 @@ class Target:
             media_type = MediaType(path_data["type"])
         else:
             media_type = None
+        # Infer media type from embedded database IDs when guessit cannot
+        # determine the type on its own.
+        if media_type is None:
+            filename_stem = str(file_path.parts[-1])
+            if re.search(r"\b(?:tmdb|imdb)id[-_]?\w+\b", filename_stem, re.IGNORECASE):
+                media_type = MediaType.MOVIE
+            elif re.search(r"\b(?:tvdb|tvmaze)id[-_]?\w+\b", filename_stem, re.IGNORECASE):
+                media_type = MediaType.EPISODE
         meta_cls = {
             MediaType.EPISODE: MetadataEpisode,
             MediaType.MOVIE: MetadataMovie,
@@ -208,6 +217,24 @@ class Target:
             # year = path_data.get("year")
             # if year:
             #     self.metadata.series = f"{self.metadata.series} {year}"
+
+    def _parse_ids_from_filename(self) -> None:
+        """Extracts database IDs embedded in the filename (e.g. tmdbid-518590)
+        and populates the corresponding metadata ID fields.  Settings-supplied
+        IDs (applied later by _override_metadata_ids) take precedence."""
+        filename = self.source.stem
+        id_patterns = {
+            "id_imdb": r"\bimdbid[-_]?(tt\d+|\d+)\b",
+            "id_tmdb": r"\btmdbid[-_]?(\d+)\b",
+            "id_tvdb": r"\btvdbid[-_]?(\d+)\b",
+            "id_tvmaze": r"\btvmazeid[-_]?(\d+)\b",
+        }
+        for attr, pattern in id_patterns.items():
+            if not hasattr(self.metadata, attr):
+                continue
+            match = re.search(pattern, filename, re.IGNORECASE)
+            if match:
+                setattr(self.metadata, attr, match.group(1))
 
     def _override_metadata_ids(self):
         id_types = {"imdb", "tmdb", "tvdb", "tvmaze"}
