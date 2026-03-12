@@ -29,6 +29,7 @@ DEFAULT_SETTINGS = {
     "no_overwrite": False,
     "no_style": False,
     "recurse": False,
+    "replace_after_dir": True,
     "replace_after": {"&": "and", ";": ",", "@": "at"},
     "replace_before": {},
     "scene": False,

@@ -15,6 +15,7 @@ from mnamer.utils import (
     normalize_container,
     parse_date,
     str_fix_padding,
+    str_replace,
     str_replace_slashes,
     str_title_case,
     year_parse,
@@ -39,11 +40,14 @@ class _MetaFormatter(Formatter):
 class Metadata:
     """A dataclass which transforms and stores media metadata information."""
 
+    audio_lang: str | None = None
+    codec: str | None = None
     container: str | None = None
     group: str | None = None
     language: Language | None = None
     language_sub: Language | None = None
     quality: str | None = None
+    resolution: str | None = None
     synopsis: str | None = None
 
     @classmethod
@@ -86,13 +90,30 @@ class Metadata:
     def as_dict(self) -> dict[str, Any]:
         d = dataclasses.asdict(self)
         d["extension"] = self.extension
+        if hasattr(self, "mediaid"):
+            d["mediaid"] = self.mediaid
         return d
 
     def _format_repl(self, mobj) -> str:
-        format_string, key = mobj.groups()
-        value = _MetaFormatter().vformat(format_string, "", self.as_dict())
+        format_string, key, sub_pattern, sub_repl = mobj.groups()
+        if sub_pattern is not None:
+            # Strip the .replace(...) transform from the token before rendering
+            clean_format = re.sub(
+                r"\.replace\('[^']*?','[^']*?'\)", "", format_string
+            )
+        else:
+            clean_format = format_string
+        value = _MetaFormatter().vformat(clean_format, "", self.as_dict())
         if key in {"name", "series", "synopsis", "title"}:
             value = str_title_case(value)
+        if sub_pattern is not None and value:
+            # Apply replace_after substitutions to the value before the inline
+            # regex transform, so word-level replacements (e.g. & -> and) are
+            # visible to the pattern. The dict is injected by Target.destination.
+            replace_after: dict[str, str] = getattr(self, "_replace_after", {})
+            if replace_after:
+                value = str_replace(value, replace_after)
+            value = re.sub(sub_pattern, sub_repl or "", value)
         return value
 
     def update(self, metadata: Metadata):
@@ -116,9 +137,18 @@ class MetadataMovie(Metadata):
     id_imdb: str | None = None
     id_tmdb: str | None = None
 
+    @property
+    def mediaid(self) -> str | None:
+        """Returns a prefixed media ID indicating the source database."""
+        if self.id_tmdb is not None:
+            return f"tmdbid-{self.id_tmdb}"
+        elif self.id_imdb is not None:
+            return f"imdbid-{self.id_imdb}"
+        return None
+
     def __format__(self, format_spec: str | None):
         default = "{name} ({year})"
-        re_pattern = r"({(\w+)(?:\[[\w:]+\])?(?:\:\d{1,2})?})"
+        re_pattern = r"({(\w+)(?:\.replace\('([^']*?)','([^']*?)'\))?(?:\[[\w:]+\])?(?:\:\d{1,2})?})"
         s = re.sub(re_pattern, self._format_repl, format_spec or default)
         s = str_fix_padding(s)
         return s
@@ -149,6 +179,15 @@ class MetadataEpisode(Metadata):
     id_tvdb: str | None = None
     id_tvmaze: str | None = None
 
+    @property
+    def mediaid(self) -> str | None:
+        """Returns a prefixed media ID indicating the source database."""
+        if self.id_tvdb is not None:
+            return f"tvdbid-{self.id_tvdb}"
+        elif self.id_tvmaze is not None:
+            return f"tvmazeid-{self.id_tvmaze}"
+        return None
+
     def __post_init__(self):
         if isinstance(self.season, str):
             self.season = int(self.season)
@@ -159,7 +198,7 @@ class MetadataEpisode(Metadata):
 
     def __format__(self, format_spec: str | None):
         default = "{series} - {season:02}x{episode:02} - {title}"
-        re_pattern = r"({(\w+)(?:\[[\w:]+\])?(?:\:\d{1,2})?})"
+        re_pattern = r"({(\w+)(?:\.replace\('([^']*?)','([^']*?)'\))?(?:\[[\w:]+\])?(?:\:\d{1,2})?})"
         s = re.sub(re_pattern, self._format_repl, format_spec or default)
         s = str_fix_padding(s)
         return s

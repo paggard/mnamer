@@ -10,7 +10,7 @@ from mnamer.exceptions import (
     MnamerSkipException,
 )
 from mnamer.setting_store import SettingStore
-from mnamer.target import Target
+from mnamer.target import DirectoryTarget, Target
 from mnamer.types import MessageType
 from mnamer.utils import clear_cache, get_filesize, is_subtitle
 
@@ -21,7 +21,10 @@ class Frontend(ABC):
 
     def __init__(self, settings: SettingStore):
         self.settings = settings
-        self.targets = Target.populate_paths(self.settings)
+        if settings.dir_mode:
+            self.targets = DirectoryTarget.populate_dirs(self.settings)
+        else:
+            self.targets = Target.populate_paths(self.settings)
         tty.configure(self.settings)
         self._handle_directives()
         self._print_configuration()
@@ -89,7 +92,10 @@ class Cli(Frontend):
 
     def _process_targets(self) -> None:
         for target in self.targets:
-            self._announce_file(target)
+            if self.settings.dir_mode:
+                self._announce_dir(target)
+            else:
+                self._announce_file(target)
             self._list_details(target)
 
             # find match for target
@@ -117,6 +123,20 @@ class Cli(Frontend):
                 tty.msg("aborting (user request)", MessageType.ERROR)
                 break
             target.metadata.update(match)
+
+            # Directory mode: no subtitle handling, rename dir in-place
+            if self.settings.dir_mode:
+                if target.destination == target.source:
+                    tty.msg(
+                        "skipping (source and destination paths are the same)",
+                        MessageType.ALERT,
+                    )
+                    continue
+                if self.settings.no_overwrite and target.destination.exists():
+                    tty.msg("skipping (--no-overwrite)", MessageType.ALERT)
+                    continue
+                self._rename_dir_target(target)
+                continue
 
             if (
                 is_subtitle(target.metadata.container)
@@ -165,6 +185,15 @@ class Cli(Frontend):
         )
         tty.msg(target.source, debug=True)
 
+    def _announce_dir(self, target: Target):
+        media_type = target.metadata.to_media_type().value.title()
+        dir_label = target.source.name
+        tty.msg(
+            f'\nProcessing {media_type} Directory "{dir_label}"',
+            MessageType.HEADING,
+        )
+        tty.msg(target.source, debug=True)
+
     def _list_details(self, target: Target):
         tty.msg(f"using {target.provider_type.value}", MessageType.ALERT, debug=True)
         tty.msg("\nsearch parameters", debug=True)
@@ -181,6 +210,22 @@ class Cli(Frontend):
             return
         try:
             target.relocate()
+        except MnamerException:
+            tty.msg("FAILED!", MessageType.ERROR)
+        else:
+            tty.msg("OK!", MessageType.SUCCESS)
+            self.success_count += 1
+
+    def _rename_dir_target(self, target: Target):
+        tty.msg(
+            f"renaming to {target.destination.absolute()}",
+            MessageType.SUCCESS,
+        )
+        if self.settings.test:
+            self.success_count += 1
+            return
+        try:
+            target.rename_dir()  # type: ignore[attr-defined]
         except MnamerException:
             tty.msg("FAILED!", MessageType.ERROR)
         else:

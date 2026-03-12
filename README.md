@@ -8,6 +8,8 @@
 
 # mnamer
 
+> **This is a fork.** I've created this fork as I needed the changes fast. This is for my personal use, but feel free to use it too. See [FORK.md](FORK.md) for a description of the changes introduced on top of upstream.
+
 mnamer (**m**edia re**namer**) is an intelligent and highly configurable media organization utility. It parses media filenames for metadata, searches the web to fill in the blanks, and then renames and moves them.
 
 Currently it has integration support with [TVDb](https://thetvdb.com) and [TvMaze](https://www.tvmaze.com) for television episodes and [TMDb](https://www.themoviedb.org/) and [OMDb](https://www.omdbapi.com) for movies.

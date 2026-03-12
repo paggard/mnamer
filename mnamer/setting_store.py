@@ -63,6 +63,16 @@ class SettingStore:
             help="-r, --recurse: search for files within nested directories",
         ).as_dict(),
     )
+    dir_mode: bool = dataclasses.field(
+        default=False,
+        metadata=SettingSpec(
+            action="store_true",
+            dest="dir_mode",
+            flags=["--dir_mode", "--dir-mode", "--dirmode"],
+            group=SettingType.PARAMETER,
+            help="--dir-mode: rename directories instead of files",
+        ).as_dict(),
+    )
     scene: bool = dataclasses.field(
         default=False,
         metadata=SettingSpec(
@@ -96,6 +106,16 @@ class SettingStore:
             flags=["--ignore"],
             group=SettingType.PARAMETER,
             help="--ignore=<PATTERN,...>: ignore files matching these regular expressions",
+            nargs="+",
+        ).as_dict(),
+    )
+    dir_ignore: list[str] = dataclasses.field(
+        default_factory=lambda: [],
+        metadata=SettingSpec(
+            dest="dir_ignore",
+            flags=["--dir_ignore", "--dir-ignore", "--dirignore"],
+            group=SettingType.PARAMETER,
+            help="--dir-ignore=<WORD,...>: skip directories whose names match these regular expressions",
             nargs="+",
         ).as_dict(),
     )
@@ -186,6 +206,15 @@ class SettingStore:
             help="--movie-format: set movie renaming format specification",
         ).as_dict(),
     )
+    movie_dir_format: str = dataclasses.field(
+        default="{name} ({year})",
+        metadata=SettingSpec(
+            dest="movie_dir_format",
+            flags=["--movie_dir_format", "--movie-dir-format", "--moviedirformat"],
+            group=SettingType.PARAMETER,
+            help="--movie-dir-format: set movie directory renaming format specification",
+        ).as_dict(),
+    )
     episode_api: ProviderType | str = dataclasses.field(
         default=ProviderType.TVMAZE,
         metadata=SettingSpec(
@@ -216,6 +245,15 @@ class SettingStore:
             flags=["--episode_format", "--episode-format", "--episodeformat"],
             group=SettingType.PARAMETER,
             help="--episode-format: set episode renaming format specification",
+        ).as_dict(),
+    )
+    episode_dir_format: str = dataclasses.field(
+        default="{series}",
+        metadata=SettingSpec(
+            dest="episode_dir_format",
+            flags=["--episode_dir_format", "--episode-dir-format", "--episodedirformat"],
+            group=SettingType.PARAMETER,
+            help="--episode-dir-format: set episode directory renaming format specification",
         ).as_dict(),
     )
 
@@ -355,6 +393,19 @@ class SettingStore:
         default_factory=lambda: {"&": "and", "@": "at", ";": ","},
         metadata=SettingSpec(group=SettingType.CONFIGURATION).as_dict(),
     )
+    replace_after_dir: bool = dataclasses.field(
+        default=True,
+        metadata=SettingSpec(group=SettingType.CONFIGURATION).as_dict(),
+    )
+    ffmpeg_path: str | None = dataclasses.field(
+        default=None,
+        metadata=SettingSpec(
+            dest="ffmpeg_path",
+            flags=["--ffmpeg_path", "--ffmpeg-path", "--ffmpegpath"],
+            group=SettingType.PARAMETER,
+            help="--ffmpeg-path=<PATH>: path to ffmpeg binary; enables codec/resolution tokens",
+        ).as_dict(),
+    )
 
     @classmethod
     def specifications(cls) -> list[SettingSpec]:
@@ -417,7 +468,7 @@ class SettingStore:
 
     def bulk_apply(self, d: dict[str, Any]):
         for k, v in d.items():
-            if v:
+            if v is not None:
                 setattr(self, k, v)
 
     def load(self) -> None:
@@ -449,3 +500,7 @@ class SettingStore:
     def formatting_for(self, media: MediaType | Metadata) -> str:
         """Returns the formatting string for a given media type or metadata."""
         return getattr(self, f"{media.to_media_type().value}_format")
+
+    def dir_formatting_for(self, media: MediaType | Metadata) -> str:
+        """Returns the directory renaming format string for a given media type or metadata."""
+        return getattr(self, f"{media.to_media_type().value}_dir_format")

@@ -3,6 +3,7 @@
 import datetime as dt
 import json
 import re
+import subprocess
 from collections.abc import Callable, Iterator
 from os import walk
 from os.path import exists, expanduser, expandvars, getsize, splitdrive, splitext
@@ -14,6 +15,119 @@ import requests_cache
 from requests.adapters import HTTPAdapter
 
 from mnamer.const import CACHE_PATH, CURRENT_YEAR, SUBTITLE_CONTAINERS
+
+
+# ---------------------------------------------------------------------------
+# ffprobe media inspection
+# ---------------------------------------------------------------------------
+
+_FFPROBE_CODEC_MAP: dict[str, str] = {
+    "h264": "H264",
+    "hevc": "H265",
+    "av1": "AV1",
+    "vp9": "VP9",
+    "vp8": "VP8",
+    "mpeg4": "MPEG4",
+    "mpeg2video": "MPEG2",
+    "xvid": "XviD",
+    "divx": "DivX",
+    "theora": "Theora",
+    "wmv3": "WMV",
+    "vc1": "VC1",
+    "mjpeg": "MJPEG",
+    "prores": "ProRes",
+    "dnxhd": "DNxHD",
+}
+
+
+def _ffprobe_path(ffmpeg_path: str) -> str:
+    """Derives the ffprobe binary path from the given ffmpeg binary path."""
+    p = Path(ffmpeg_path)
+    if p.parent == Path("."):
+        return "ffprobe"
+    return str(p.parent / "ffprobe")
+
+
+def probe_media_info(
+    file_path: Path, ffmpeg_path: str
+) -> tuple[str | None, str | None, str | None]:
+    """
+    Uses ffprobe to extract video resolution, codec and audio language label
+    from a media file.
+
+    Returns a ``(resolution, codec, audio_lang)`` tuple; any value may be
+    ``None`` when the information cannot be determined.  *audio_lang* is
+    ``'ENG'`` when the file contains only a single English audio stream, and
+    ``'MULTI'`` when there are multiple audio streams or the sole stream is not
+    English.  The ffprobe binary is derived from *ffmpeg_path* (same
+    directory, filename ``ffprobe``).
+    """
+    ffprobe = _ffprobe_path(ffmpeg_path)
+    try:
+        result = subprocess.run(
+            [
+                ffprobe,
+                "-v", "quiet",
+                "-print_format", "json",
+                "-show_streams",
+                str(file_path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        return None, None, None
+
+    try:
+        data = json.loads(result.stdout)
+    except (json.JSONDecodeError, ValueError):
+        return None, None, None
+
+    all_streams = data.get("streams", [])
+    if not all_streams:
+        return None, None, None
+
+    video_streams = [s for s in all_streams if s.get("codec_type") == "video"]
+    audio_streams = [s for s in all_streams if s.get("codec_type") == "audio"]
+
+    # --- video resolution & codec -------------------------------------------
+    resolution: str | None = None
+    codec: str | None = None
+    if video_streams:
+        stream = video_streams[0]
+        height: int | None = stream.get("height")
+        width: int | None = stream.get("width")
+        raw_codec: str | None = stream.get("codec_name")
+
+        if isinstance(width, int) and width > 0 and isinstance(height, int) and height > 0:
+            if width >= 3840:
+                resolution = "4K"
+            elif width >= 2560:
+                resolution = "1440p"
+            elif width >= 1920:
+                resolution = "1080p"
+            elif height >= 720:
+                resolution = "720p"
+            elif height >= 576:
+                resolution = "576p"
+            elif height >= 480:
+                resolution = "480p"
+            else:
+                resolution = f"{height}p"
+
+        if raw_codec:
+            codec = _FFPROBE_CODEC_MAP.get(raw_codec.lower(), raw_codec.upper())
+
+    # --- audio language label ------------------------------------------------
+    audio_lang: str | None = None
+    if len(audio_streams) > 1:
+        audio_lang = "MULTI."
+
+    return resolution, codec, audio_lang
+
+
+# ---------------------------------------------------------------------------
 
 
 def clean_dict(target_dict: dict, whitelist=None) -> dict:
@@ -45,6 +159,19 @@ def crawl_in(file_paths: list[Path], recurse: bool = False) -> list[Path]:
             if not recurse:
                 break
     return sorted(found_files)
+
+
+def crawl_in_dirs(dir_paths: list[Path]) -> list[Path]:
+    """Returns immediate child directories within each given path."""
+    found_dirs = set()
+    for dir_path in dir_paths:
+        if not dir_path.exists():
+            continue
+        if dir_path.is_dir():
+            for child in dir_path.iterdir():
+                if child.is_dir():
+                    found_dirs.add(child.absolute())
+    return sorted(found_dirs)
 
 
 def crawl_out(filename: str | Path | PurePath) -> Path | None:
