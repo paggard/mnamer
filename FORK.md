@@ -2,6 +2,11 @@
 
 This document describes the features and fixes added on top of the upstream mnamer codebase.
 
+to update you installed mnamer - use dev branch from this repo:
+
+```
+pipx install --force git+https://github.com/paggard/mnamer.git@dev
+```
 ---
 
 ## New template tokens
@@ -31,6 +36,34 @@ The token is silently omitted (brackets and all padding are cleaned up by the ex
 
 ---
 
+## ID-in-filename lookup
+
+When a filename already contains a database ID — such as one produced by the `{mediaid}` token in a previous run — mnamer automatically extracts it and uses it for API lookup, bypassing title or year-based guessing entirely.
+
+**Supported patterns** (case-insensitive; hyphens and underscores are interchangeable):
+
+| Pattern | Example | Database |
+|---------|---------|----------|
+| `tmdbid-<id>` | `tmdbid-27205` | TMDb |
+| `imdbid-<id>` | `imdbid-tt1375666` | IMDb |
+| `tvdbid-<id>` | `tvdbid-153021` | TVDb |
+| `tvmazeid-<id>` | `tvmazeid-73` | TVmaze |
+
+**Example:** A file named `Inception.(2010).[tmdbid-27205].mkv` causes mnamer to extract `27205`, set `id_tmdb` on the metadata, and query TMDb by that exact ID rather than searching by title.
+
+IDs supplied via command-line flags (`--id-tmdb`, `--id-imdb`, `--id-tvdb`, `--id-tvmaze`) always take precedence over IDs parsed from the filename.
+
+### Media type inference from embedded IDs
+
+When `guessit` cannot determine whether a file is a movie or an episode, mnamer uses the embedded ID prefix as a hint:
+
+- `tmdbid-` or `imdbid-` in the filename → treated as a **Movie**
+- `tvdbid-` or `tvmazeid-` in the filename → treated as an **Episode**
+
+This ensures correct provider selection even when the filename contains too little textual information for guessit to classify the media type on its own.
+
+---
+
 ### `{resolution}`, `{codec}`, `{audio_lang}` (requires ffmpeg)
 
 When `ffmpeg_path` is set, mnamer runs `ffprobe` on each source file before renaming and populates three new tokens from the actual media streams.
@@ -55,7 +88,7 @@ mnamer --ffmpeg-path /usr/local/bin/ffmpeg <files>
 | `{codec}` | Normalised codec name | `H265`, `H264`, `AV1`, `VP9`, `MPEG4`, … |
 | `{audio_lang}` | Audio stream summary | `MULTI.` (multiple streams) or absent for single-stream files |
 
-Resolution thresholds: ≥3840 px wide → `4K`; ≥2560 → `1440p`; ≥1920 → `1080p`; ≥1280 (height ≥ 720) → `720p`.
+Resolution thresholds (width-primary, height-fallback for sub-HD): ≥3840 px wide → `4K`; ≥2560 → `1440p`; ≥1920 → `1080p`; then height ≥ 720 → `720p`; ≥ 576 → `576p`; ≥ 480 → `480p`; otherwise `{height}p`.
 
 **Usage:**
 
